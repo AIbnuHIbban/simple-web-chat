@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <title>Chat App</title>
+</head>
+<body class="bg-gray-100">
+  <div class="container mx-auto p-4 h-screen flex flex-col">
+    <!-- Create Room -->
+    <div id="create-room" class="mb-4">
+      <input id="username-input" type="text" class="p-2 border rounded" placeholder="Enter your name">
+      <button id="create-button" class="p-2 bg-blue-500 text-white rounded">Create Room</button>
+      <div id="room-link" class="mt-2"></div>
+    </div>
+    <!-- Join Room -->
+    <div id="join-room" class="mb-4">
+      <input id="room-input" type="text" class="p-2 border rounded" placeholder="Enter room ID">
+      <button id="join-button" class="p-2 bg-green-500 text-white rounded">Join Room</button>
+    </div>
+    <!-- Chat Area -->
+    <div id="chat-room" class="w-full bg-gray-200 h-full flex flex-col hidden">
+      <!-- Messages -->
+      <div id="messages" class="flex-1 p-4 overflow-y-scroll"></div>
+      <!-- Message Input -->
+      <div class="p-4 border-t border-gray-300 flex">
+        <input id="message-input" type="text" class="flex-1 p-2 border rounded-l" placeholder="Type your message...">
+        <button id="send-button" class="p-2 bg-blue-500 text-white rounded-r">Send</button>
+      </div>
+      <!-- File Input -->
+      <input type="file" id="file-input" class="hidden">
+      <button id="file-button" class="mt-2 p-2 bg-green-500 text-white rounded">Send File</button>
+    </div>
+  </div>
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+
+    const createRoomDiv = document.getElementById('create-room');
+    const joinRoomDiv = document.getElementById('join-room');
+    const chatRoomDiv = document.getElementById('chat-room');
+
+    const usernameInput = document.getElementById('username-input');
+    const roomInput = document.getElementById('room-input');
+    const createButton = document.getElementById('create-button');
+    const joinButton = document.getElementById('join-button');
+    const roomLinkDiv = document.getElementById('room-link');
+
+    const messageInput = document.getElementById('message-input');
+    const messagesDiv = document.getElementById('messages');
+    const sendButton = document.getElementById('send-button');
+    const fileButton = document.getElementById('file-button');
+    const fileInput = document.getElementById('file-input');
+
+    let username = '';
+    let room = '';
+
+    createButton.addEventListener('click', () => {
+      username = usernameInput.value;
+      room = Math.random().toString(36).substr(2, 9); // Generate random room ID
+      roomLinkDiv.innerHTML = `<a href="?room=${room}" class="text-blue-500 underline">Share this link to join the room</a>`;
+      joinRoom(room);
+    });
+
+    joinButton.addEventListener('click', () => {
+      username = usernameInput.value;
+      room = roomInput.value;
+      joinRoom(room);
+    });
+
+    function joinRoom(room) {
+      createRoomDiv.classList.add('hidden');
+      joinRoomDiv.classList.add('hidden');
+      chatRoomDiv.classList.remove('hidden');
+
+      socket.emit('joinRoom', room, username);
+      fetchMessages(room);
+    }
+
+    sendButton.addEventListener('click', (e) => {
+      e.preventDefault();
+      const msg = {
+        room,
+        username,
+        text: messageInput.value,
+        createdAt: new Date().toISOString() // Add timestamp
+      };
+      socket.emit('chatMessage', msg);
+      messageInput.value = '';
+    });
+
+    socket.on('message', (msg) => {
+      const div = document.createElement('div');
+      const timestamp = new Date(msg.createdAt).toLocaleTimeString(); // Convert timestamp
+      const isCurrentUser = msg.username === username;
+      div.className = isCurrentUser ? 'bg-blue-500 text-white p-2 rounded-lg mb-2 max-w-xs' : 'bg-red-500 text-white p-2 rounded-lg mb-2 max-w-xs';
+
+      if (msg.username === 'System') {
+        div.innerHTML = `<strong>${msg.username}</strong>: ${msg.text}`;
+      } else if (msg.text.startsWith('<a href') && msg.text.includes('File')) {
+        div.innerHTML = `<strong>${msg.username}</strong>: ${msg.text}<br><span class="text-xs italic">${timestamp}</span>`;
+      } else if (msg.text.startsWith('<a href') && msg.text.includes('image')) {
+        div.innerHTML = `<strong>${msg.username}</strong><br><img src="${msg.text.split('"')[1]}" alt="Image" class="w-full h-auto rounded-lg"><br><span class="text-xs italic">${timestamp}</span>`;
+      } else {
+        div.innerHTML = `<strong>${msg.username}</strong>: ${msg.text}<br><span class="text-xs italic">${timestamp}</span>`;
+      }
+      messagesDiv.appendChild(div);
+      messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    });
+
+    fileButton.addEventListener('click', () => {
+      fileInput.click();
+    });
+
+    fileInput.addEventListener('change', () => {
+      const file = fileInput.files[0];
+      const formData = new FormData();
+      formData.append('file', file);
+
+      fetch('/upload', {
+        method: 'POST',
+        body: formData,
+      })
+        .then(response => response.json())
+        .then(data => {
+          const fileExtension = data.filePath.split('.').pop().toLowerCase();
+          let msgText = `<a href="${data.filePath}" target="_blank">File</a>`;
+          if (['jpg', 'jpeg', 'png', 'gif', 'bmp'].includes(fileExtension)) {
+            msgText = `<a href="${data.filePath}" target="_blank">image</a>`;
+          }
+          const msg = {
+            room,
+            username,
+            text: msgText,
+            createdAt: new Date().toISOString() // Add timestamp
+          };
+          socket.emit('chatMessage', msg);
+        });
+    });
+
+    function fetchMessages(room) {
+      fetch(`/api/messages/${room}`)
+        .then(response => response.json())
+        .then(data => {
+          data.forEach(msg => {
+            const div = document.createElement('div');
+            const timestamp = new Date(msg.createdAt).toLocaleTimeString(); // Convert timestamp
+            const isCurrentUser = msg.username === username;
+            div.className = isCurrentUser ? 'bg-blue-500 text-white p-2 rounded-lg mb-2 max-w-xs' : 'bg-red-500 text-white p-2 rounded-lg mb-2 max-w-xs';
+
+            if (msg.username === 'System') {
+              div.innerHTML = `<strong>${msg.username}</strong>: ${msg.text}`;
+            } else if (msg.text.startsWith('<a href') && msg.text.includes('File')) {
+              div.innerHTML = `<strong>${msg.username}</strong>: ${msg.text}<br><span class="text-xs italic">${timestamp}</span>`;
+            } else if (msg.text.startsWith('<a href') && msg.text.includes('image')) {
+              div.innerHTML = `<strong>${msg.username}</strong><br><img src="${msg.text.split('"')[1]}" alt="Image" class="w-full h-auto rounded-lg"><br><span class="text-xs italic">${timestamp}</span>`;
+            } else {
+              div.innerHTML = `<strong>${msg.username}</strong>: ${msg.text}<br><span class="text-xs italic">${timestamp}</span>`;
+            }
+            messagesDiv.appendChild(div);
+          });
+        });
+    }
+
+    // Check if there is a room in the URL parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const roomParam = urlParams.get('room');
+    if (roomParam) {
+      room = roomParam;
+      username = 'Anonymous'; // Default username if not provided
+      joinRoom(room);
+    }
+  </script>
+</body>
+
+</html>
