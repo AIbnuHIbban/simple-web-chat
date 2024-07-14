@@ -24,8 +24,8 @@ A real-time chat application built with Node.js, Express, Socket.IO, MongoDB, an
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/chat-app.git
-   cd chat-app
+   git clone https://github.com/AIbnuHIbban/simple-web-chat.git
+   cd simple-web-chat
    ```
 2. Install dependencies:
    ```bash
